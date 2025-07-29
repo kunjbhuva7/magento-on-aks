@@ -11,3 +11,4 @@ variable "location" {
 variable "aks_name" {
   default = "magento-cluster"
 }
+

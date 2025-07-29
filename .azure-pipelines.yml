@@ -13,8 +13,10 @@ variables:
 
 stages:
   - stage: DeployInfrastructure
+    displayName: 'Terraform Provisioning'
     jobs:
       - job: Terraform
+        displayName: 'Terraform Init & Apply'
         steps:
           - task: TerraformInstaller@1
             inputs:
@@ -28,13 +30,19 @@ stages:
 
           - script: |
               cd terraform
-              terraform apply -auto-approve
+              terraform apply -auto-approve \
+                -var "subscription_id=$(ARM_SUBSCRIPTION_ID)" \
+                -var "client_id=$(ARM_CLIENT_ID)" \
+                -var "client_secret=$(ARM_CLIENT_SECRET)" \
+                -var "tenant_id=$(ARM_TENANT_ID)"
             displayName: 'Terraform Apply'
 
   - stage: DeployMagento
+    displayName: 'Deploy Magento on AKS'
     dependsOn: DeployInfrastructure
     jobs:
-      - job: AKS_Deployment
+      - job: AKSDeployment
+        displayName: 'Helm Install Magento'
         steps:
           - task: AzureCLI@2
             inputs:
@@ -46,5 +54,5 @@ stages:
                 helm repo add bitnami https://charts.bitnami.com/bitnami
                 helm repo update
                 helm install magento bitnami/magento -f helm/magento-values.yaml
-            displayName: 'Deploy Magento on AKS'
+            displayName: 'Install Magento on AKS'
 
