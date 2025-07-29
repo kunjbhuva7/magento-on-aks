@@ -1,0 +1,12 @@
+magentoUsername: admin
+magentoPassword: admin123
+magentoEmail: admin@example.com
+magentoFirstName: Admin
+magentoLastName: User
+
+ingress:
+  enabled: true
+  hostname: magento.local
+
+service:
+  type: LoadBalancer

@@ -1,0 +1,41 @@
+tigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - name: ARM_CLIENT_ID
+    value: $(ARM_CLIENT_ID)
+  - name: ARM_CLIENT_SECRET
+    value: $(ARM_CLIENT_SECRET)
+  - name: ARM_SUBSCRIPTION_ID
+    value: $(ARM_SUBSCRIPTION_ID)
+  - name: ARM_TENANT_ID
+    value: $(ARM_TENANT_ID)
+
+steps:
+- task: TerraformInstaller@1
+  inputs:
+    terraformVersion: '1.6.6'
+
+- script: |
+    cd terraform
+    terraform init
+  displayName: Terraform Init
+
+- script: |
+    cd terraform
+    terraform apply -auto-approve
+  displayName: Terraform Apply
+
+- script: |
+    az aks get-credentials --resource-group magento-rg --name magento-cluster
+  displayName: Get AKS Credentials
+
+- script: |
+    helm repo add bitnami https://charts.bitnami.com/bitnami
+    helm install magento bitnami/magento -f ../helm/magento-values.yaml
+  displayName: Deploy Magento via Helm
