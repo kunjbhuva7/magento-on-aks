@@ -1,6 +1,6 @@
 #4
 
-tigger:
+trigger:
   branches:
     include:
       - main
