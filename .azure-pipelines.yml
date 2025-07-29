@@ -12,11 +12,11 @@ variables:
   - group: TerraformSecrets
 
 stages:
-  - stage: DeployInfrastructure
-    displayName: 'Terraform Provisioning'
+
+  - stage: ValidateTerraform
+    displayName: '1. Validate Terraform'
     jobs:
-      - job: Terraform
-        displayName: 'Terraform Init & Apply'
+      - job: Validate
         steps:
           - task: TerraformInstaller@1
             inputs:
@@ -26,8 +26,15 @@ stages:
           - script: |
               cd terraform
               terraform init
-            displayName: 'Terraform Init'
+              terraform validate
+            displayName: 'Terraform Validate'
 
+  - stage: DeployInfrastructure
+    displayName: '2. Deploy Infrastructure'
+    dependsOn: ValidateTerraform
+    jobs:
+      - job: Terraform
+        steps:
           - script: |
               cd terraform
               terraform apply -auto-approve \
@@ -37,16 +44,31 @@ stages:
                 -var "tenant_id=$(ARM_TENANT_ID)"
             displayName: 'Terraform Apply'
 
-  - stage: DeployMagento
-    displayName: 'Deploy Magento on AKS'
+  - stage: VerifyInfra
+    displayName: '3. Verify Infra'
     dependsOn: DeployInfrastructure
     jobs:
-      - job: AKSDeployment
-        displayName: 'Helm Install Magento'
+      - job: CheckInfra
         steps:
           - task: AzureCLI@2
             inputs:
-              azureSubscription: 'azure'  # Replace with your Azure service connection name
+              azureSubscription: 'azure'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                az group show --name magento-rg
+                az aks show --resource-group magento-rg --name magento-cluster
+            displayName: 'Verify AKS and RG'
+
+  - stage: DeployMagento
+    displayName: '4. Deploy Magento on AKS'
+    dependsOn: VerifyInfra
+    jobs:
+      - job: AKSDeployment
+        steps:
+          - task: AzureCLI@2
+            inputs:
+              azureSubscription: 'azure'
               scriptType: 'bash'
               scriptLocation: 'inlineScript'
               inlineScript: |
@@ -54,5 +76,47 @@ stages:
                 helm repo add bitnami https://charts.bitnami.com/bitnami
                 helm repo update
                 helm install magento bitnami/magento -f helm/magento-values.yaml
-            displayName: 'Install Magento on AKS'
+            displayName: 'Install Magento via Helm'
+
+  - stage: VerifyMagentoPod
+    displayName: '5. Verify Magento Pod'
+    dependsOn: DeployMagento
+    jobs:
+      - job: CheckPod
+        steps:
+          - script: |
+              kubectl get pods -n default
+              kubectl describe pods -l app.kubernetes.io/name=magento
+            displayName: 'Check Magento Pod'
+
+  - stage: ExposeService
+    displayName: '6. Expose Magento Service'
+    dependsOn: VerifyMagentoPod
+    jobs:
+      - job: Expose
+        steps:
+          - script: |
+              kubectl get svc
+              kubectl expose deployment magento --type=LoadBalancer --name=magento-service
+            displayName: 'Expose Magento via LoadBalancer'
+
+  - stage: PostInstallConfig
+    displayName: '7. Post-Install Configuration'
+    dependsOn: ExposeService
+    jobs:
+      - job: Config
+        steps:
+          - script: |
+              echo "Post deployment tasks here..."
+            displayName: 'Configure Magento App'
+
+  - stage: Notify
+    displayName: '8. Notify Completion'
+    dependsOn: PostInstallConfig
+    jobs:
+      - job: SendNotification
+        steps:
+          - script: |
+              echo "Deployment complete. Send email or Slack message."
+            displayName: 'Notify Team'
 

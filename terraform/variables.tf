@@ -6,7 +6,7 @@ variable "resource_group" {
   default = "magento-C4"
 }
 variable "location" {
-  default = "centralus"
+  default = "eastus"
 }
 variable "aks_name" {
   default = "magento-cluster"
