@@ -33,3 +33,11 @@ resource "azurerm_kubernetes_cluster" "main" {
   }
 }
 
+# Assign Cluster Admin Role to the AKS system-assigned identity
+resource "azurerm_role_assignment" "aks_admin" {
+  scope                = azurerm_resource_group.main.id
+  role_definition_name = "Azure Kubernetes Service RBAC Cluster Admin"
+  principal_id         = azurerm_kubernetes_cluster.main.identity[0].principal_id
+
+  depends_on = [azurerm_kubernetes_cluster.main]
+}

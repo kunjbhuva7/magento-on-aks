@@ -3,12 +3,12 @@ variable "client_id" {}
 variable "client_secret" {}
 variable "tenant_id" {}
 variable "resource_group" {
-  default = "magento-7B"
+  default = "magento-8B"
 }
 variable "location" {
   default = "centralindia"
 }
 variable "aks_name" {
-  default = "magento-cluster-2"
+  default = "magento-cluster-3"
 }
 
