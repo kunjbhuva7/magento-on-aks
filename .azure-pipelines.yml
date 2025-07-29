@@ -6,53 +6,52 @@ trigger:
 pr: none
 
 pool:
-  vmImage: 'ubuntu-latest'
+  vmImage: ubuntu-latest
 
 variables:
   - group: TerraformSecrets
 
-stages:
-  - stage: DeployInfrastructure
-    displayName: 'Terraform Provisioning'
-    jobs:
-      - job: Terraform
-        displayName: 'Terraform Init & Apply'
-        steps:
-          - task: TerraformInstaller@1
-            inputs:
-              terraformVersion: '1.6.6'
-            displayName: 'Install Terraform'
+steps:
+  - task: TerraformInstaller@1
+    inputs:
+      terraformVersion: '1.6.6'
+    displayName: 'Install Terraform'
 
-          - script: |
-              cd terraform
-              terraform init
-            displayName: 'Terraform Init'
+  - script: |
+      echo "##[group]Terraform Init"
+      cd terraform
+      terraform init -backend=true
+      echo "##[endgroup]"
+    displayName: 'Terraform Init'
 
-          - script: |
-              cd terraform
-              terraform apply -auto-approve \
-                -var "subscription_id=$(ARM_SUBSCRIPTION_ID)" \
-                -var "client_id=$(ARM_CLIENT_ID)" \
-                -var "client_secret=$(ARM_CLIENT_SECRET)" \
-                -var "tenant_id=$(ARM_TENANT_ID)"
-            displayName: 'Terraform Apply'
+  - script: |
+      echo "##[group]Terraform Plan"
+      cd terraform
+      terraform plan -out=tfplan
+      echo "##[endgroup]"
+    displayName: 'Terraform Plan'
 
-  - stage: DeployMagento
-    displayName: 'Deploy Magento on AKS'
-    dependsOn: DeployInfrastructure
-    jobs:
-      - job: AKSDeployment
-        displayName: 'Helm Install Magento'
-        steps:
-          - task: AzureCLI@2
-            inputs:
-              azureSubscription: 'azure'  # Replace with your Azure service connection name
-              scriptType: 'bash'
-              scriptLocation: 'inlineScript'
-              inlineScript: |
-                az aks get-credentials --resource-group magento-rg --name magento-cluster
-                helm repo add bitnami https://charts.bitnami.com/bitnami
-                helm repo update
-                helm install magento bitnami/magento -f helm/magento-values.yaml
-            displayName: 'Install Magento on AKS'
+  - script: |
+      echo "##[group]Terraform Apply"
+      cd terraform
+      terraform apply -auto-approve tfplan
+      echo "##[endgroup]"
+    displayName: 'Terraform Apply'
+
+  - task: AzureCLI@2
+    inputs:
+      azureSubscription: 'azure'  # 👈 Replace with your service connection name
+      scriptType: 'bash'
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        echo "Assigning role to new SP..."
+
+        SP_ID=$(az ad sp list --display-name "my-sp-name" --query "[0].objectId" -o tsv)
+        SCOPE="/subscriptions/$(az account show --query id -o tsv)"
+
+        az role assignment create \
+          --assignee-object-id $SP_ID \
+          --role "Owner" \
+          --scope $SCOPE
+      displayName: 'Assign Role to Service Principal (Owner)'
 

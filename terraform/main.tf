@@ -33,7 +33,9 @@ resource "azurerm_kubernetes_cluster" "main" {
   }
 }
 
-# Assign Cluster Admin Role to the AKS system-assigned identity
+# Wait for AKS identity to be created
+data "azurerm_client_config" "current" {}
+
 resource "azurerm_role_assignment" "aks_admin" {
   scope                = azurerm_resource_group.main.id
   role_definition_name = "Azure Kubernetes Service RBAC Cluster Admin"
