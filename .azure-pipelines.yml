@@ -10,6 +10,12 @@ pool:
 
 variables:
   - group: TerraformSecrets
+  - name: resource_group
+    value: "wordpress-9C"
+  - name: aks_name
+    value: "magento-aks"
+  - name: location
+    value: "East US"
 
 steps:
   - task: TerraformInstaller@1
@@ -55,7 +61,10 @@ steps:
           -var "subscription_id=$(ARM_SUBSCRIPTION_ID)" \
           -var "client_id=$(ARM_CLIENT_ID)" \
           -var "client_secret=$(ARM_CLIENT_SECRET)" \
-          -var "tenant_id=$(ARM_TENANT_ID)"
+          -var "tenant_id=$(ARM_TENANT_ID)" \
+          -var "resource_group=$(resource_group)" \
+          -var "aks_name=$(aks_name)" \
+          -var "location=$(location)"
       workingDirectory: terraform
       env:
         ARM_CLIENT_ID: $(ARM_CLIENT_ID)
