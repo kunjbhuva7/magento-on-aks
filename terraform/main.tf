@@ -38,7 +38,7 @@ data "azurerm_client_config" "current" {}
 resource "azurerm_role_assignment" "aks_admin" {
   scope                = azurerm_resource_group.main.id
   role_definition_name = "Contributor"
-  principal_id         = azurerm_kubernetes_cluster.main.identity[0].principal_id
+  principal_id         = principal_id = azurerm_kubernetes_cluster.main.identity[0].principal_id
 
   depends_on = [azurerm_kubernetes_cluster.main]
 }

@@ -3,7 +3,7 @@ variable "client_id" {}
 variable "client_secret" {}
 variable "tenant_id" {}
 variable "resource_group" {
-  default = "magento-10B"
+  default = "magento-11B"
 }
 variable "location" {
   default = "Central India"
