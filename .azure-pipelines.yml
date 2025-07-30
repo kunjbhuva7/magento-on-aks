@@ -1,5 +1,3 @@
-#4
-
 trigger:
   branches:
     include:
@@ -8,58 +6,138 @@ trigger:
 pr: none
 
 pool:
-  vmImage: 'ubuntu-latest'
+  vmImage: ubuntu-latest
 
 variables:
   - group: TerraformSecrets
 
-stages:
-  - stage: TerraformProvisioning
-    displayName: 'Provision Infrastructure with Terraform'
-    jobs:
-      - job: TerraformJob
-        displayName: 'Initialize & Apply Terraform'
-        steps:
-          - task: TerraformInstaller@1
-            inputs:
-              terraformVersion: '1.6.6'
-            displayName: 'Install Terraform'
+steps:
+  - task: TerraformInstaller@1
+    inputs:
+      terraformVersion: '1.6.6'
+    displayName: 'Install Terraform'
 
-          - script: |
-              cd terraform
-              terraform init
-            displayName: 'Terraform Init'
+  - task: DownloadSecureFile@1
+    name: sshPrivateKey
+    inputs:
+      secureFile: 'id_rsa'
+    displayName: 'Download SSH private key'
 
-          - script: |
-              cd terraform
-              terraform apply -auto-approve \
-                -var "subscription_id=$(ARM_SUBSCRIPTION_ID)" \
-                -var "client_id=$(ARM_CLIENT_ID)" \
-                -var "client_secret=$(ARM_CLIENT_SECRET)" \
-                -var "tenant_id=$(ARM_TENANT_ID)"
-            displayName: 'Terraform Apply Infrastructure'
+  - task: Bash@3
+    inputs:
+      targetType: 'inline'
+      script: |
+        mkdir -p terraform/keys
+        cp $(sshPrivateKey.secureFilePath) terraform/keys/id_rsa
+        chmod 600 terraform/keys/id_rsa
+    displayName: 'Copy private key to keys folder'
 
-  - stage: DeployMagentoAKS
-    displayName: 'Deploy Magento on AKS with Helm'
-    dependsOn: TerraformProvisioning
-    jobs:
-      - job: MagentoHelmJob
-        displayName: 'Install Magento via Helm on AKS'
-        steps:
-          - task: AzureCLI@2
-            inputs:
-              azureSubscription: 'azure'  # 🔁 Replace with your service connection name
-              scriptType: 'bash'
-              scriptLocation: 'inlineScript'
-              inlineScript: |
-                echo "Logging into AKS cluster..."
-                az aks get-credentials --resource-group magento-rg --name magento-cluster
+  - task: Bash@3
+    inputs:
+      targetType: 'inline'
+      script: |
+        echo "Initializing Terraform..."
+        terraform init
+      workingDirectory: terraform
+      env:
+        ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+        ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+        ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+        ARM_TENANT_ID: $(ARM_TENANT_ID)
+    displayName: 'Terraform Init'
 
-                echo "Adding Bitnami Helm repo..."
-                helm repo add bitnami https://charts.bitnami.com/bitnami
-                helm repo update
+  - task: Bash@3
+    inputs:
+      targetType: 'inline'
+      script: |
+        echo "Running Terraform Plan..."
+        terraform plan -out=tfplan \
+          -var "subscription_id=$(ARM_SUBSCRIPTION_ID)" \
+          -var "client_id=$(ARM_CLIENT_ID)" \
+          -var "client_secret=$(ARM_CLIENT_SECRET)" \
+          -var "tenant_id=$(ARM_TENANT_ID)"
+      workingDirectory: terraform
+      env:
+        ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+        ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+        ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+        ARM_TENANT_ID: $(ARM_TENANT_ID)
+    displayName: 'Terraform Plan'
 
-                echo "Installing Magento chart..."
-                helm install magento bitnami/magento -f helm/magento-values.yaml
-            displayName: 'Deploy Magento Helm Chart'
+  - task: Bash@3
+    inputs:
+      targetType: 'inline'
+      script: |
+        echo "Applying Terraform Plan..."
+        terraform apply -auto-approve tfplan
+      workingDirectory: terraform
+      env:
+        ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+        ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+        ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+        ARM_TENANT_ID: $(ARM_TENANT_ID)
+    displayName: 'Terraform Apply'
 
+  - task: Bash@3
+    inputs:
+      targetType: 'inline'
+      script: |
+        echo "Fetching new resource group and cluster details..."
+        RESOURCE_GROUP=$(terraform output -raw resource_group_name)
+        CLUSTER_NAME=$(terraform output -raw cluster_name)
+        echo "Resource Group: $RESOURCE_GROUP"
+        echo "Cluster Name: $CLUSTER_NAME"
+        echo "Assigning role to service principal..."
+        az role assignment create --assignee 7c6de6ef-b05c-4413-87c1-dc4b27855283 --role "Azure Kubernetes Service Cluster User Role" --scope /subscriptions/$(ARM_SUBSCRIPTION_ID)/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.ContainerService/managedClusters/$CLUSTER_NAME
+        echo "Logging into AKS cluster..."
+        az aks get-credentials --resource-group $RESOURCE_GROUP --name $CLUSTER_NAME --overwrite-existing
+      env:
+        ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+        ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+        ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+        ARM_TENANT_ID: $(ARM_TENANT_ID)
+    displayName: 'Configure AKS Permissions and Credentials'
+
+  - task: Bash@3
+    inputs:
+      targetType: 'inline'
+      script: |
+        echo "Installing kubectl..."
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        chmod +x ./kubectl
+        sudo mv ./kubectl /usr/local/bin/kubectl
+        echo "Installing Helm..."
+        curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        chmod 700 get_helm.sh
+        ./get_helm.sh
+        echo "Adding Bitnami Helm repo..."
+        helm repo add bitnami https://charts.bitnami.com/bitnami
+        helm repo update
+        echo "Installing Magento chart..."
+        helm install magento bitnami/magento --set service.type=LoadBalancer
+      env:
+        ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+        ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+        ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+        ARM_TENANT_ID: $(ARM_TENANT_ID)
+    displayName: 'Deploy Magento Helm Chart'
+
+  - task: Bash@3
+    inputs:
+      targetType: 'inline'
+      script: |
+        echo "✅ Terraform and Helm Deployment Successful!"
+    displayName: 'Success Message'
+
+  - task: SendEmail@1
+    inputs:
+      to: 'kunjbhuva301@gmail.com'
+      subject: '✅ Terraform and Helm Pipeline Success'
+      body: |
+        Hello,
+
+        Your Terraform and Helm pipeline ran successfully and infrastructure is deployed.
+
+        Regards,
+        Azure DevOps Pipeline
+    displayName: 'Send Success Email'
