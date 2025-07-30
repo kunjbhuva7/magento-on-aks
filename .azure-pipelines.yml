@@ -128,16 +128,3 @@ steps:
       script: |
         echo "✅ Terraform and Helm Deployment Successful!"
     displayName: 'Success Message'
-
-  - task: SendEmail@1
-    inputs:
-      to: 'kunjbhuva301@gmail.com'
-      subject: '✅ Terraform and Helm Pipeline Success'
-      body: |
-        Hello,
-
-        Your Terraform and Helm pipeline ran successfully and infrastructure is deployed.
-
-        Regards,
-        Azure DevOps Pipeline
-    displayName: 'Send Success Email'
